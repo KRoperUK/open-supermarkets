@@ -32,14 +32,18 @@ const server = new Server(
   }
 );
 
-const PROVIDERS: ProviderName[] = ['sainsburys', 'ocado', 'tesco'];
+const PROVIDERS: ProviderName[] = ['sainsburys', 'ocado', 'tesco', 'tesco-hu'];
 
 // Session directories per provider
 const SESSION_PATHS: Record<ProviderName, string> = {
   sainsburys: `${os.homedir()}/.sainsburys/session.json`,
   ocado: `${os.homedir()}/.ocado/session.json`,
   tesco: `${os.homedir()}/.tesco/session.json`,
+  'tesco-hu': `${os.homedir()}/.tesco-hu/session.json`,
 };
+
+/** Providers whose catalogue search works with no session at all. */
+const ANONYMOUS_SEARCH = new Set<ProviderName>(['tesco-hu']);
 
 function isLoggedIn(provider: ProviderName): boolean {
   return fs.existsSync(SESSION_PATHS[provider]);
@@ -65,7 +69,7 @@ function textResult(text: string, isError = false) {
 
 // ─── Tool definitions ────────────────────────────────────────────
 
-const providerEnum = { type: 'string', enum: PROVIDERS, description: 'Supermarket provider: sainsburys, ocado, or tesco' };
+const providerEnum = { type: 'string', enum: PROVIDERS, description: 'Supermarket provider: sainsburys, ocado, tesco, or tesco-hu (Hungary)' };
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
@@ -73,7 +77,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       // ── Authentication ──
       {
         name: 'grocery_login',
-        description: 'Login to a UK supermarket account. Required before using other tools for that provider. Launches a browser for authentication.',
+        description: 'Login to a supermarket account (sainsburys, ocado, tesco). Launches a browser for authentication. tesco-hu has no scripted login: import a browser session with the CLI instead.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -431,7 +435,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // ── grocery_search ──
     if (name === 'grocery_search') {
       // Search can sometimes work without login for some providers, but check anyway
-      if (loginError) return textResult(loginError, true);
+      if (loginError && !ANONYMOUS_SEARCH.has(providerName)) return textResult(loginError, true);
       const { query, limit = 10 } = args as { query: string; limit?: number };
       const provider = getProvider(providerName);
       const results = await provider.search(query);
@@ -569,11 +573,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       const formatted = basket.items.map((item, i) =>
-        `${i + 1}. ${item.quantity}x ${item.name}\n   ${money(item.unit_price)} each = ${money(item.total_price)} | ID: ${item.product_uid}`
+        `${i + 1}. ${item.quantity}x ${item.name}\n   ${money(item.unit_price, basket.currency)} each = ${money(item.total_price, basket.currency)} | ID: ${item.product_uid}`
       ).join('\n\n');
 
       return textResult(
-        `${providerName.toUpperCase()} Basket - ${money(basket.total_cost)} (${basket.items.length} items):\n\n${formatted}`
+        `${providerName.toUpperCase()} Basket - ${money(basket.total_cost, basket.currency)} (${basket.items.length} items):\n\n${formatted}`
       );
     }
 
