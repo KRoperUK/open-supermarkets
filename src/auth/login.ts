@@ -1,8 +1,15 @@
-import { chromium } from 'playwright';
+import { chromium } from 'playwright-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as readline from 'readline';
+
+// Sainsbury's sits behind Akamai. A vanilla Playwright browser is served an
+// "Access Denied" page instead of the login form, so headless re-auth can never
+// succeed — the login loop just retries on every 401. Tesco's auth already
+// loads these evasions; Sainsbury's did not. With them the login page renders.
+chromium.use(StealthPlugin());
 
 const CONFIG_DIR = path.join(os.homedir(), '.sainsburys');
 const SESSION_FILE = path.join(CONFIG_DIR, 'session.json');
@@ -22,23 +29,64 @@ export interface LoginOptions {
   headless?: boolean;
 }
 
+/**
+ * Akamai serves a short "Access Denied" page (with a Reference #) rather than
+ * the login form. Detecting it explicitly turns a 30-second selector timeout
+ * into an actionable error.
+ */
+async function isEdgeBlock(page: any): Promise<boolean> {
+  const body = await page
+    .locator('body')
+    .innerText({ timeout: 3000 })
+    .catch(() => '');
+  return /access denied|don't have permission to access/i.test(body);
+}
+
 export async function login(email: string, password: string, options: LoginOptions = {}): Promise<SessionData> {
   const headless = options.headless ?? false;
   const log = headless ? console.error : console.log;
   log('🔐 Logging in to Sainsbury\'s...');
 
-  const browser = await chromium.launch({ headless });
-  const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+  const browser = await chromium.launch({
+    headless,
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--no-default-browser-check',
+      '--disable-dev-shm-usage',
+    ],
   });
+  const context = await browser.newContext({
+    userAgent:
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36',
+    viewport: { width: 1440, height: 900 },
+    locale: 'en-GB',
+    timezoneId: 'Europe/London',
+  });
+  await context.addInitScript(
+    "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+  );
   
   const page = await context.newPage();
   
   try {
-    // Go to login page (OAuth endpoint)
+    // Go to login page (OAuth endpoint). This redirects to
+    // account.sainsburys.co.uk/login-ui/gol/login?login_challenge=...
     log('📍 Navigating to login page...');
-    await page.goto('https://www.sainsburys.co.uk/gol-ui/oauth/login', { waitUntil: 'domcontentloaded' });
+    await page.goto('https://www.sainsburys.co.uk/gol-ui/oauth/login', {
+      waitUntil: 'domcontentloaded',
+      timeout: 45000,
+    });
     await page.waitForTimeout(3000);
+
+    if (await isEdgeBlock(page)) {
+      throw new Error(
+        'Sainsbury\'s edge returned an Access Denied page to the automated browser, ' +
+        'so the login form never rendered. Either the stealth evasions have stopped ' +
+        'working or this network is blocked — import a session from an interactive ' +
+        'login instead.'
+      );
+    }
     
     // Handle cookie consent if present
     try {
@@ -58,7 +106,7 @@ export async function login(email: string, password: string, options: LoginOptio
     
     // Wait for login form to appear
     log('⏳ Waiting for login form...');
-    await page.waitForSelector('input[type="email"], input[name="email"], #username', { timeout: 10000 });
+    await page.waitForSelector('input[type="email"], input[name="email"], #username', { timeout: 30000 });
     
     // Fill in email
     log('📧 Entering email...');
