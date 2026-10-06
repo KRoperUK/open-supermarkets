@@ -1,0 +1,16 @@
+/**
+ * Money formatting, shared by the CLI, the MCP server and the HTTP API.
+ *
+ * This lives in its own module because the pound sign was previously hardcoded
+ * in a dozen places across three entrypoints. That was harmless while the
+ * project was UK-only and became a correctness bug the moment it wasn't — an
+ * Instacart basket reporting dollars as pounds is worse than no total at all.
+ */
+/**
+ * Symbol for a currency code, falling back to the code itself so an unmapped
+ * currency reads as "BRL 12.00" rather than silently claiming to be sterling.
+ */
+export declare function sym(currency?: string): string;
+/** Format an amount as a price: two decimals, correct symbol. */
+export declare function money(amount: number, currency?: string): string;
+//# sourceMappingURL=format.d.ts.map

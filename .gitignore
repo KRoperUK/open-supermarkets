@@ -1,5 +1,7 @@
 node_modules/
-dist/
+# dist/ is committed deliberately in this deployment fork: the container installs
+# the package straight from git, and building there needs a TypeScript toolchain
+# it does not have. Remove this line before proposing anything upstream.
 *.log
 .DS_Store
 
