@@ -258,7 +258,12 @@ export class SainsburysProvider implements GroceryProvider {
     
     // Get current basket to find the item
     const basket = await this.getBasket();
-    const item = basket.items.find(i => i.item_id === itemId);
+    // The basket view prints a product_uid as "ID", and callers pass that back
+    // here (and to removeFromBasket), but a basket line is identified by its
+    // item_uid. Match either, so the id a user actually sees is usable.
+    const item =
+      basket.items.find(i => i.item_id === itemId) ||
+      basket.items.find(i => i.product_uid === itemId);
     
     if (!item) {
       throw new Error(`Item ${itemId} not found in basket`);

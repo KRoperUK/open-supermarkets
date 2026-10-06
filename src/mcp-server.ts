@@ -253,7 +253,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           type: 'object',
           properties: {
             provider: { ...providerEnum, default: 'sainsburys' },
-            product_id: { type: 'string', description: 'Product or item ID to remove' },
+            product_id: { type: 'string', description: 'Product or basket item ID to remove — either the "basket item id" or the "product id" shown by grocery_basket_view. Product IDs come from search results.' },
           },
           required: ['product_id'],
         },
@@ -265,7 +265,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           type: 'object',
           properties: {
             provider: { ...providerEnum, default: 'sainsburys' },
-            item_id: { type: 'string', description: 'Item ID in the basket' },
+            item_id: { type: 'string', description: 'Basket item ID or product ID of the line to update — both are shown by grocery_basket_view.' },
             quantity: { type: 'number', description: 'New quantity' },
           },
           required: ['item_id', 'quantity'],
@@ -573,7 +573,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       const formatted = basket.items.map((item, i) =>
-        `${i + 1}. ${item.quantity}x ${item.name}\n   ${money(item.unit_price, basket.currency)} each = ${money(item.total_price, basket.currency)} | ID: ${item.product_uid}`
+        `${i + 1}. ${item.quantity}x ${item.name}\n   ${money(item.unit_price, basket.currency)} each = ${money(item.total_price, basket.currency)}\n   basket item id: ${item.item_id} | product id: ${item.product_uid}`
       ).join('\n\n');
 
       return textResult(
