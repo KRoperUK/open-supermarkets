@@ -1,5 +1,6 @@
 import { chromium } from 'playwright-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import type { Browser, LaunchOptions } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -30,6 +31,34 @@ export interface LoginOptions {
 }
 
 /**
+ * Prefer a real, installed Chrome over the bundled Chromium: it is a closer
+ * match for what Akamai expects, and it avoids a ~150 MB browser download on
+ * first run. Falls back to the bundled browser if the channel is unavailable,
+ * mirroring the Tesco auth path.
+ */
+async function launchBrowser(headless: boolean): Promise<Browser> {
+  const launchOptions: LaunchOptions = {
+    headless,
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--no-default-browser-check',
+      '--disable-dev-shm-usage',
+    ],
+  };
+
+  const preferredChannel =
+    process.env.GROC_BROWSER_CHANNEL || process.env.PLAYWRIGHT_CHROMIUM_CHANNEL || 'chrome';
+
+  try {
+    return await chromium.launch({ ...launchOptions, channel: preferredChannel });
+  } catch {
+    console.log(`⚠️  Could not launch ${preferredChannel}; falling back to bundled Chromium.`);
+    return chromium.launch(launchOptions);
+  }
+}
+
+/**
  * Akamai serves a short "Access Denied" page (with a Reference #) rather than
  * the login form. Detecting it explicitly turns a 30-second selector timeout
  * into an actionable error.
@@ -47,15 +76,7 @@ export async function login(email: string, password: string, options: LoginOptio
   const log = headless ? console.error : console.log;
   log('🔐 Logging in to Sainsbury\'s...');
 
-  const browser = await chromium.launch({
-    headless,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--disable-features=IsolateOrigins,site-per-process',
-      '--no-default-browser-check',
-      '--disable-dev-shm-usage',
-    ],
-  });
+  const browser = await launchBrowser(headless);
   const context = await browser.newContext({
     userAgent:
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36',
